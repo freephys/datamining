@@ -1,0 +1,73 @@
+---
+title: "Personal Activitity Study"
+author: "Leo"
+date: "Saturday, March 05, 2016"
+output: html_document
+---
+
+The goal of this project is to predict the manner in which they did the exercise. 
+This is the "classe" variable in the training data set. The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The rest of the data are collected from a group of enthusiasts who take measurements about themselves regularly to improve their health. The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+We want to classify the exercise manner for these 20 people according to their measurements.
+
+## Load and Pre-process Data
+
+We load the csv data. The data has 19622 rows and 160 columns, while the last column classe is the one to be classified based on the remaining columns.  We remove the first 7 columns which are not related factors to predict the value of last column. Then we further remove columns with more than 10% of the NAs and columns with almost zero variance since these data will not be useful as well. Finally, there are 52 variables left. 
+```{r}
+library(caret)
+library(randomForest)
+testData <- read.csv("./pml-testing.csv",header=TRUE,na.strings=c("NA","NaN","#DIV/0!", ""))
+trainData <- read.csv("./pml-training.csv",header=TRUE,na.strings=c("NA","NaN","#DIV/0!", ""))
+dim(trainData)
+# clean up train data
+# remove columns that are not relevant to predictions
+trainData <- trainData[,-c(1:7)] 
+#remove columns with more than 0.1 NAs 
+trainData <- trainData[,colSums(is.na(trainData)) <= 0.1*nrow(trainData)]
+# removing zero variance variables
+nzv <- nearZeroVar(trainData,saveMetrics = TRUE)
+trainData <- trainData[,nzv$nzv==FALSE]
+dim(trainData)
+```
+
+
+##Predict with Random Forests and Model Selection
+
+Create partition of training dataset with 80% of data goes to training and 20% goes to test. We first test with full model and list the importance of each variable. The confusionMatrix shows the accuracy of the model against test data set is 0.9952. 
+```{r}
+trainIndex  <- createDataPartition(trainData$classe,p = .8,list = FALSE)
+trainDataIn <- trainData[trainIndex,]
+trainDataOut <- trainData[-trainIndex,]
+set.seed(15)
+# test with full model with 52 variables and check the importance of variables
+rf=randomForest(trainDataIn$classe ~ .,data=trainDataIn,ntree=300, importance=TRUE)
+varImpPlot(rf,)
+# test the full model with the test data set
+predictData <- predict(rf,trainDataOut)
+confusionMatrix(trainDataOut$classe,predictData)
+
+```
+We attempt to reduce the variable number with simplest 2-fold cross-validation considering limiting computing time. we set step to 0.5 so that 50% least importance variables are removed. We then plot the cv.error versus number of variables and find that error starts to level off at 6 variables. The accuracy is 0.9837 as compared to 0.9952 in full model with 52 variables. 
+```{r}
+rf.training=rfcv(trainDataIn[-1],trainDataIn$classe,cv.fold = 2,scale = "log",step = 0.5)
+with(rf.training, plot(n.var, error.cv, log="x", type="o", lwd=2))
+# we try with model consisting the top six variables with large importance 
+rf2=randomForest(trainDataIn$classe ~ yaw_belt+roll_belt+pitch_belt+magnet_dumbbell_z+magnet_dumbbell_y+pitch_forearm,data=trainDataIn,ntree=300, importance=TRUE)
+predictData2 <- predict(rf2,trainDataOut)
+confusionMatrix(trainDataOut$classe,predictData2)
+```
+
+##Predict With Test Data
+
+We predict the output of test data with full model and 6 factors model and found same predictions. 
+```{r}
+predictDataOut <- predict(rf,testData)
+predictDataOut2 <- predict(rf2,testData)
+identical(predictDataOut,predictDataOut2)
+```
